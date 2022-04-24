@@ -101,10 +101,14 @@ torch_solve_qp_admm<-function(Q,
     }
     #lu  factorization is not differentiable:
     if(unroll_grad){
-      if(n_x < 100000){
+      if(n_x <= 100){# --- this is efficient for small problems
         mat_inv = linalg_inv(mat)
       }
-      else{
+      else if(n_x > 100){
+        with_no_grad({mat_lu = torch_lu(mat)})
+        mat_inv = mat # --- placeholder
+      }
+      else{# --- placeholder until cleanup possible
         mat_inv = mat
       }
     }
@@ -142,8 +146,11 @@ torch_solve_qp_admm<-function(Q,
       rhs = -p + rho*y
     }
     if(unroll_grad){
-      if(n_x < 100000){
+      if(n_x <= 100){
         xv = torch_matmul(mat_inv,rhs)
+      }
+      else if(n_x > 100){
+        xv = lu_layer(A = mat, b = rhs, A_lu = mat_lu) # --- this is having some memory leakage
       }
       else{
         xv = linalg_solve(mat,rhs)
