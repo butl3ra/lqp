@@ -19,8 +19,8 @@ torch_solve_qp_admm<-function(Q,
 {
   # --- unpacking control:
   rho = control$rho
-  tol_primal = control$tol_primal
-  tol_dual = control$tol_dual
+  tol_primal = 0.5*control$tol_primal
+  tol_dual = 0.5*control$tol_dual
   tol_relative = control$tol_relative
   verbose = control$verbose
   max_iters = control$max_iters
@@ -199,10 +199,10 @@ torch_solve_qp_admm<-function(Q,
 
     stop_1 = as.logical(primal_error < tol_primal) & as.logical(dual_error < tol_dual)
     stop_2 = FALSE
+    # --- check for improvements
     if(iter > 10){
       prev_error = errors[iter - 9]
-      #threshold = (tol_primal + tol_dual)/10#5
-      stop_2 = as.logical(abs(prev_error - error) < tol_relative )#not making significant improvements
+      stop_2 = as.logical(abs(prev_error - error) < tol_relative )# --- potential roundoff errors for float32
     }
     do_stop = stop_1 | stop_2
     if(do_stop){
@@ -273,38 +273,7 @@ torch_solve_qp_admm<-function(Q,
 }
 
 
-if(F){
-  lams = u*rho
-  lams_neg = torch_threshold_(-lams,0,0)
-  lams_pos = torch_threshold_(lams,0,0)
-  lams = torch_cat(list(lams_neg,lams_pos),2)
 
-  nus = NULL
-  if(any_A){
-    nus = xv[,idx_eq,,drop=F]
-  }
-
-  # --- compute residuals equivalent to int:
-  r_p_eq = compute_residual_primal_eq_core(z = z,
-                                           A = A,
-                                           b = b)
-  r_p_ineq = compute_residual_primal_ineq_core(z = z,
-                                               G = G,
-                                               h = h)
-
-  r_d = compute_residual_dual_core(z = z,
-                                   Q = Q,
-                                   p = p,
-                                   lams = lams,
-                                   nus = nus,
-                                   A = A,
-                                   G = G)
-
-
-  # ---  primal and dual errors:
-  primal_error = torch_norm(r_p_eq,dim=2,keepdim=T) + torch_norm(r_p_ineq,dim=2,keepdim=T)#torch_norm(r,dim=2,keepdim=T)/n_x
-  dual_error = torch_norm(r_d,dim=2,keepdim=T) #torch_norm(s,dim=2,keepdim=T)/n_x
-}
 
 #' @export
 torch_bounds_to_h<-function(lb,
