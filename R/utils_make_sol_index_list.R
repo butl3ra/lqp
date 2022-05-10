@@ -10,7 +10,7 @@ make_sol_index_list<-function(method,
 {
   method = tolower(method)
   n_con = n_eq + n_ineq
-  if(method == 'uncon'){
+  if(method == 'uncon' | method == 'uncon_l1' | method == 'con_l1'){
     sol_index_list = list(x = 1:n_x)
 
   }

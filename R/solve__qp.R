@@ -230,6 +230,28 @@ torch_solve_qp<-function(Q,
                                A = A,
                                b = b)
   }
+  else if(solver_method == 'uncon_l1'){
+    #---- unconstrained with l1 regularization problem
+    sol = torch_solve_qp_uncon_l1(Q = Q,
+                                  p = p,
+                                  E = E,
+                                  lambda_1 = lambda_1,
+                                  control = control)
+  }
+  else if(solver_method == 'con_l1'){
+    #---- unconstrained with l1 regularization problem
+    sol = torch_solve_qp_con_l1(Q = Q,
+                                p = p,
+                                A = A,
+                                b = b,
+                                G = G,
+                                h = h,
+                                lb = lb,
+                                ub = ub,
+                                E = E,
+                                lambda_1 = lambda_1,
+                                control = control)
+  }
   else{
     if(solver_method == 'int' ){
       # --- interior point solver:

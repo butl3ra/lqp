@@ -13,6 +13,12 @@ get_solver_method<-function(any_eq,
   else if(!any_ineq & !any_l_1){
     method = 'eqcon'
   }
+  else if(!any_eq & !any_ineq & any_l_1 & solver == 'uncon_l1'){
+    method = 'uncon_l1'
+  }
+  else if(any_l_1 & solver == 'con_l1'){
+    method = 'con_l1'
+  }
   else if(!any_l_1 & solver == 'int'){
     method = 'int'
   }
