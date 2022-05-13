@@ -139,7 +139,7 @@ torch_solve_qp_con_l1<-function(Q,
     P = EVE
   }
   # --- stability:
-  P = P + 10^-12 * torch_eye(n_z + n_eq + n_ineq)$unsqueeze(1)
+  P = P + 10^-12 * torch_eye(n_z + n_eq + n_ineq)$unsqueeze(1)#10^-12
 
   # --- linear components:
   Vp = torch_matmul(V,p)#V%*%p
@@ -244,6 +244,141 @@ torch_solve_qp_con_l1<-function(Q,
                   control = control)
 
   # --- unpack:
+  v = sol[,1:n_z,]
+  rhs = - p - torch_matmul(E_t,v)# -p - E_t%*%v
+  if(any_eq){
+    nu = sol[, (n_z + 1):(n_z+n_eq), ]
+    rhs = rhs - torch_matmul(A_t,nu)#rhs - A_t%*%nu
+  }
+  if(any_ineq){
+    mu = sol[, (n_z + n_eq + 1):(n_all),]
+    rhs = rhs - torch_matmul(G_t,mu)#rhs - t(G)%*%mu
+  }
+
+  # --- primal solution:
+  z = torch_matmul(V,rhs) #V%*%rhs
+
+  return(z)
+
+}
+
+
+#' @export
+torch_solve_qp_con_l1<-function(Q,
+                                p,
+                                A = NULL,
+                                b = NULL,
+                                G = NULL,
+                                h = NULL,
+                                E,
+                                lambda_1,
+                                control,
+                                ...)
+{
+
+  #---- prep
+  n_z = ncol(Q)
+  n_batch = nrow(Q)
+  n_eq = get_ncon(A)
+  n_ineq = get_ncon(G)
+  any_eq = n_eq > 0
+  any_ineq = n_ineq >0
+
+  # --- decision variables:
+  # [v,n,u]
+  V = torch_inverse(Q)
+
+
+  # --- build main matrix:
+  E_t = torch_transpose(E,2,3)
+  EVE = torch_matmul(torch_matmul(E,V),E_t)
+  if(any_eq){
+    A_t = torch_transpose(A,2,3)
+    EVA = torch_matmul(torch_matmul(E,V),A_t)
+    AVA = torch_matmul(torch_matmul(A,V),A_t)
+  }
+  if(any_ineq){
+    G_t = torch_transpose(G,2,3)
+    EVG = torch_matmul(torch_matmul(E,V),G_t)
+    GVG = torch_matmul(torch_matmul(G,V),G_t)
+  }
+  if(any_eq & any_ineq){
+    AVG = torch_matmul(torch_matmul(A,V),G_t)
+  }
+  # --- assemble:
+  if(any_eq & !any_ineq){
+    top = torch_cat(list(EVE,EVA),dim = 3) #cbind(EVE,EVA)
+    mid = torch_cat(list(torch_transpose(EVA,2,3),AVA),dim = 3) #cbind(t(EVA),AVA)
+    P = torch_cat(list(top,mid),dim = 2)#rbind(top,mid)
+  }
+  else if(any_ineq & !any_eq){
+    top = torch_cat(list(EVE,EVG),dim = 3) #cbind(EVE,EVG)
+    bot = torch_cat(list(torch_transpose(EVG,2,3),GVG),dim = 3) #cbind(t(EVG),GVG)
+    P = torch_cat(list(top,bot),dim = 2)#rbind(top,bot)
+  }
+  else if(any_eq & any_ineq){
+    top = torch_cat(list(EVE,EVA,EVG),dim = 3)#cbind(EVE,EVA,EVG)
+    mid = torch_cat(list(torch_transpose(EVA,2,3),AVA,AVG),dim = 3) #cbind(t(EVA),AVA,AVG)
+    bot = torch_cat(list(torch_transpose(EVG,2,3),torch_transpose(AVG,2,3),GVG),dim = 3)#cbind(t(EVG),t(AVG),GVG)
+    P = torch_cat(list(top,mid,bot),dim = 2)#rbind(top,mid,bot)
+  }
+  else{
+    P = EVE
+  }
+  # --- stability:
+  P = P + 10^-12 * torch_eye(n_z + n_eq + n_ineq)$unsqueeze(1)#10^-12
+
+  # --- linear components:
+  Vp = torch_matmul(V,p)#V%*%p
+  obj = torch_matmul(E,Vp)#E%*%Vp
+  if(any_eq){
+    obj_eq = torch_matmul(A,Vp) + b
+    obj = torch_cat(list(obj,obj_eq),dim=2)#c(obj, A%*%Vp + b)
+  }
+  if(any_ineq){
+    obj_ineq = torch_matmul(G,Vp) + h
+    obj = torch_cat(list(obj,obj_ineq),dim=2)#c(obj,G%*%Vp +h )
+  }
+
+
+  # --- solve dual:
+  n_all = n_z + n_eq + n_ineq
+  lb = -lambda_1*torch_ones(c(n_batch,n_z,1))
+  ub = lambda_1*torch_ones(c(n_batch,n_z,1))
+  if(any_eq){
+    big = torch_ones(c(n_batch,n_eq,1))*10^8
+    lb = torch_cat(list(lb,-big),dim=2)
+    ub = torch_cat(list(ub,big),dim=2)
+  }
+  if(any_ineq){
+    big = torch_ones(c(n_batch,n_ineq,1))*10^8
+    zero = torch_zeros(c(n_batch,n_ineq,1))
+    lb = torch_cat(list(lb,zero),dim=2)
+    ub = torch_cat(list(ub,big),dim=2)
+  }
+
+  control = nn_qp_control(solver = 'admm',
+                          output_as_list = FALSE,
+                          tol_primal = 10^-3,
+                          tol_dual = 10^-3,
+                          max_iters = 1000,
+                          backprop = 'fixed_point',
+                          verbose=FALSE,
+                          do_D_crossprod = FALSE,
+                          unroll_grad = FALSE)
+  control$rho = 1
+  n_obs = get_n_obs_proxy(P)#  --- scaling:
+  model = nn_qp(Q = P/n_obs,
+                p = obj/n_obs,
+                A = NULL,
+                b = NULL,
+                G = NULL,
+                lb = lb,
+                ub = ub,
+                E = NULL,
+                lambda_1 = NULL,
+                control = control)
+  sol = model()
   v = sol[,1:n_z,]
   rhs = - p - torch_matmul(E_t,v)# -p - E_t%*%v
   if(any_eq){
