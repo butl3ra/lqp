@@ -382,7 +382,10 @@ torch_qp_grad_admm<-function(x,
   }
   R = torch_diagonal(R_mat,dim1=2,dim2=3)
   lhs = R$unsqueeze(3)*mat + D#torch_matmul(R,mat)
-  d_vec_2 = linalg_solve(lhs,rhs)
+  d_vec_2 = try(linalg_solve(lhs,rhs),silent=T)
+  if(inherits(d_vec_2,'try-error')){
+    d_vec_2 = linalg_solve(lhs + 10^-4*torch_eye(dim(lhs)[2])$unsqueeze(1),rhs)
+  }
 
   # --- from here
   dv = d_vec_2[,idx_x,,drop=F]
